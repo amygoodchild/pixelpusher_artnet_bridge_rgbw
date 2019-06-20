@@ -5,10 +5,12 @@ import com.heroicrobot.dropbit.devices.pixelpusher.Strip;
 import java.util.*;
 
 DeviceRegistry registry;
+TestObserver testObserver;
 
 // Set up to receive artnet data
 ArtNetClient artnet;
-byte[] dmxData = new byte[1024];
+
+int totalStrips = 6;
 
 // Get info from the Pixelpusher
 class TestObserver implements Observer {
@@ -18,20 +20,20 @@ class TestObserver implements Observer {
         println("Registry changed!");
         if (updatedDevice != null) {
           println("Device change: " + updatedDevice);
-          println("");
         }
         this.hasStrips = true;
     }
 }
 
-// Set up an array to save the info received from artnet
-Rgbw[] rgbws;
+// Set up an array of PixelPushers
+Pixelpusher[] pixelpushers;
+int numPixelPushers = 3;
 
-TestObserver testObserver;
+
 
 void setup()
 {
-  size(500, 250);
+  size(500, 800);
   textAlign(CENTER, CENTER);
   textSize(20);
 
@@ -42,16 +44,13 @@ void setup()
   registry = new DeviceRegistry();
   testObserver = new TestObserver();
   registry.addObserver(testObserver);
+
+  pixelpushers = new Pixelpusher[numPixelPushers];
   
-  // Right now this array holds 128 rgbw pixels, as this is one DMX universe worth (128 x 4 = 512)
-  rgbws = new Rgbw[196];
-  for (int i=0; i<196; i++){
-     rgbws[i] = new Rgbw(0,0,0,0);     
-  }
-  
-  setDataBlank();
-  
-  writeLeds();
+  pixelpushers[0] = new Pixelpusher(2,1);
+  pixelpushers[1] = new Pixelpusher(2,2);
+  pixelpushers[2] = new Pixelpusher(2,3);
+     
 }
 
 void draw()
@@ -59,52 +58,13 @@ void draw()
   fill(255);
   rect(0,0,width,height);
 
-  setDataBlank();
-  
+  readData();
+  //setBlank();
+  drawData();
   writeLeds();
-
-}
-
-void readData(){
-  // read rgb color from the first 3 bytes
-  byte[] data = artnet.readDmxData(0, 0);
   
-  // save the info from the artnet readout to the array of rgbws
-  for (int i=0; i<192; i++){
-    int r = data[i*4]& 0xFF;
-    
-    int g = data[i*4 + 1]& 0xFF;
-    int b = data[i*4 + 2]& 0xFF;
-    int w = data[i*4 + 3]& 0xFF;
-    
-    rgbws[i].update(r,g,b,w);
-  }
+  
 }
-
-void setData(){
-
-  for (int i=0; i<192; i++){
-    int r = 0;
-    int g = 50;
-    int b = 0;
-    int w = 0;
-    rgbws[i].update(r,g,b,w);
-  }
-}
-
-
-
-void setDataBlank(){
-
-  for (int i=0; i<192; i++){
-    int r = 0;
-    int g = 0;
-    int b = 0;
-    int w = 0;
-    rgbws[i].update(r,g,b,w);
-  }
-}
-
 
 void writeLeds(){
   
@@ -112,41 +72,122 @@ void writeLeds(){
         registry.startPushing();
         registry.setAutoThrottle(true);
         registry.setAntiLog(true);
-        
         List<Strip> strips = registry.getStrips();
-        int stripnum = 1;
-        // There's some looping here to deal with if there are more than one strip but actually this is currently only set up to 
-        // work with one, will expand later.
+        
         if (strips.size() > 0) {
-          for(Strip strip : strips) {
+          int pp = 0;
+          int s = 0;
+          for(Strip strip : strips) {   
             
             int stripLength = strip.getLength(); 
-           // println("strip length: " + stripLength);
+            //println("strip: " + strip.getStripIdentifier());
             // Goes through the whole strip setting the colours, in sets of 4 rgb pixels 
             // as that is how many it takes to repeat the rgbw pattern.
             // This covers 3 actual rgbw pixels.
-            if (stripnum == 1){     
-              
-              for (int i=0; i<stripLength; i+=4) {
-                strip.setPixel(color(rgbws[i+0].r, rgbws[i+0].g, rgbws[i+0].b), i);
-                strip.setPixel(color(rgbws[i+1].g, rgbws[i+0].w, rgbws[i+1].r), i+1);
-                strip.setPixel(color(rgbws[i+1].w, rgbws[i+1].b, rgbws[i+2].g), i+2);
-                strip.setPixel(color(rgbws[i+2].b, rgbws[i+2].r, rgbws[i+2].w), i+3);
-              }      
+            int theSet = 0;
+            for (int i=0; i<stripLength; i+=4) {
+              int a = i-theSet;
+              int b = i-theSet+1;
+              int c = i-theSet+2;
+              strip.setPixel(color(pixelpushers[pp].strips[s].rgbws[a].r, pixelpushers[pp].strips[s].rgbws[a].g, pixelpushers[pp].strips[s].rgbws[a].b), i);
+              strip.setPixel(color(pixelpushers[pp].strips[s].rgbws[b].g, pixelpushers[pp].strips[s].rgbws[a].w, pixelpushers[pp].strips[s].rgbws[b].r), i+1);
+              strip.setPixel(color(pixelpushers[pp].strips[s].rgbws[b].w, pixelpushers[pp].strips[s].rgbws[b].b, pixelpushers[pp].strips[s].rgbws[c].g), i+2);
+              strip.setPixel(color(pixelpushers[pp].strips[s].rgbws[c].b, pixelpushers[pp].strips[s].rgbws[c].r, pixelpushers[pp].strips[s].rgbws[c].w), i+3);
+              theSet++;
+            }   
+            println("pp: " + pp + " s: " + s);
+            if (s == 0){
+              s++;
             }
-            stripnum++;
+            else{
+              pp++;
+              s = 0;
+            }
           }
         }
         
-    }
-    
-      // show values for the first 4 rgbw pixels, useful for testing/troubleshooting
-    fill(0);
-    text("R: " + rgbws[0].r + " Green: " + rgbws[0].g + " Blue: " + rgbws[0].b + " White: " + rgbws[0].w, width / 2, height / 2-20);
-    text("R: " + rgbws[1].r + " Green: " + rgbws[1].g + " Blue: " + rgbws[1].b + " White: " + rgbws[1].w, width / 2, height / 2);
-    text("R: " + rgbws[2].r + " Green: " + rgbws[2].g + " Blue: " + rgbws[2].b + " White: " + rgbws[2].w, width / 2, height / 2+20);
-    text("R: " + rgbws[3].r + " Green: " + rgbws[3].g + " Blue: " + rgbws[3].b + " White: " + rgbws[3].w, width / 2, height / 2+40);
+   }
 }
+
+void setBlank(){
+  for (int j = 0; j<numPixelPushers; j++){
+    for (int k = 0; k<pixelpushers[j].numStrips; k++){
+      int universe = j*4 + k*2;
+      byte[] data = artnet.readDmxData(0, universe);
+      int datacount = 0;
+      for (int i=0; i<128; i++){
+        int r = 0;
+        int g = 0;
+        int b = 0;
+        int w = 0;
+        pixelpushers[j].strips[k].rgbws[i].update(r,g,b,w);  
+        datacount += 4;
+        
+        //println("Pixelpusher: " + j + " strip: " + k + " pixel: " + i + " universe: " + universe + " (section 1)");
+      }
+      datacount = 0;
+      universe+=1;
+      data = artnet.readDmxData(0, universe);
+      for (int i=128; i<144; i++){
+        int r = 0;
+        int g = 0;
+        int b = 0;
+        int w = 0;
+        pixelpushers[j].strips[k].rgbws[i].update(r,g,b,w);  
+        datacount += 4;
+        
+        //println("Pixelpusher: " + j + " strip: " + k + " pixel: " + i + " universe: " + universe + " (section 2)");
+      }
+    }
+  } 
+  
+}
+
+
+void readData(){
+  for (int j = 0; j<numPixelPushers; j++){
+    for (int k = 0; k<pixelpushers[j].numStrips; k++){
+      int universe = j*4 + k*2;
+      byte[] data = artnet.readDmxData(0, universe);
+      int datacount = 0;
+      for (int i=0; i<128; i++){
+        int r = data[datacount]& 0xFF;
+        int g = data[datacount + 1]& 0xFF;
+        int b = data[datacount + 2]& 0xFF;
+        int w = data[datacount + 3]& 0xFF;
+        pixelpushers[j].strips[k].rgbws[i].update(r,g,b,w);  
+        datacount += 4;
+        
+        //println("Pixelpusher: " + j + " strip: " + k + " pixel: " + i + " universe: " + universe + " (section 1)");
+      }
+      datacount = 0;
+      universe+=1;
+      data = artnet.readDmxData(0, universe);
+      for (int i=128; i<144; i++){
+        int r = data[datacount]& 0xFF;
+        int g = data[datacount + 1]& 0xFF;
+        int b = data[datacount + 2]& 0xFF;
+        int w = data[datacount + 3]& 0xFF;
+        pixelpushers[j].strips[k].rgbws[i].update(r,g,b,w);  
+        datacount += 4;
+        
+        //println("Pixelpusher: " + j + " strip: " + k + " pixel: " + i + " universe: " + universe + " (section 2)");
+      }
+    }
+  } 
+}
+
+void drawData(){
+  for (int j = 0; j<numPixelPushers; j++){
+    for (int k = 0; k<pixelpushers[j].numStrips; k++){
+      for (int i=0; i<128; i++){
+        pixelpushers[j].strips[k].rgbws[i].display();
+      }
+    }
+  }
+}
+
+
 
 // I dunno some exit handler stuff from pixelpusher. 
 private void prepareExitHandler () {
